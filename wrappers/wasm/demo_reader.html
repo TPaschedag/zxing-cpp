@@ -3,236 +3,73 @@
 <head>
 	<meta charset="utf-8">
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-	<title>ZXing in Javascript demo</title>
+	<title>zxing-cpp/wasm reader demo</title>
+	<link rel="shortcut icon" href="#" />
 	<script src="zxing_reader.js"></script>
 	<script src="base64ArrayBuffer.js"></script>
 	<script>
+var zxing = ZXing().then(function(instance) {
+	zxing = instance; // this line is supposedly not required but with current emsdk it is :-/
+});
 
-		const imageWorker = new Worker('imageWorker.js');
+function scanBarcode(file) {
+	var reader = new FileReader();
+	reader.onloadend = function(evt) {
+		var format = document.getElementById("scan_format").value;
+		var fileData = new Uint8Array(evt.target.result);
 
-		imageWorker.addEventListener('message', function(event) {
-			console.debug(`Received response from worker: ${event.data}`);
-		});
+		var buffer = zxing._malloc(fileData.length);
+		zxing.HEAPU8.set(fileData, buffer);
+		var result = zxing.readBarcodeFromImage(buffer, fileData.length, true, format);
+		zxing._free(buffer);
 
-		var isScanning = false;
-		var framesProcessed = 0;
+		showImage(document.getElementById("drop_zone"), fileData, file.type, result.position);
+		showScanResult(result);
+	}
+	reader.readAsArrayBuffer(file);
+}
 
-		// init at page load
-		var zxing = ZXing().then(function(instance) {
-			zxing = instance; // this line is supposedly not required but with current emsdk it is :-/
-		});
+function showImage(container, fileData, fileType, position) {
+	fileType = fileType || "image/jpeg";
+	container.innerHTML = "";
+	var img = document.createElement("img");
+	img.addEventListener('load', function() {
+		container.style.width = img.width + 'px';
+		container.style.height = img.height + 'px';
+		const canvas = document.createElement("canvas");
+		canvas.width = img.width;
+		canvas.height = img.height;
+		const ctx = canvas.getContext("2d");
+		ctx.drawImage(img, 0, 0);
+		ctx.beginPath();
+		ctx.moveTo(position.topLeft.x, position.topLeft.y);
+		ctx.lineTo(position.topRight.x, position.topRight.y);
+		ctx.lineTo(position.bottomRight.x, position.bottomRight.y);
+		ctx.lineTo(position.bottomLeft.x, position.bottomLeft.y);
+		ctx.closePath();
+		ctx.strokeStyle = "red";
+		ctx.lineWidth = 5;
+		ctx.stroke();
+		container.appendChild(canvas);
+	});
+	img.src = "data:" + fileType + ";base64," + base64ArrayBuffer(fileData);
+}
 
-		function handleScanResult(result) {
-			console.debug("[DEBUG] ==== HANDLE SCAN RESULT", result);
-		}
+function showScanResult(result) {
+	if (result.error) {
+		document.getElementById("scan_result").innerHTML = '<font color="red">Error: ' + result.error + '</font>';
+	} else if (result.format) {
+		document.getElementById("scan_result").innerHTML = "Format: <strong>" + result.format + "</strong><pre>" + result.text + "</pre>";
+	} else {
+		document.getElementById("scan_result").innerHTML = "No " + (document.getElementById("scan_format").value || "barcode") + " found";
+	}
+}
 
-		function startScanning(e) {
-			console.debug("[DEBUG] ==== SCANNING START");
-
-			if (!isScanning) {
-				isScanning = true;
-				scanNow();
-
-				// const timeoutElem = document.getElementById("scan_duration");
-				// const timeoutInSeconds = parseInt(timeoutElem.value);
-				// setTimeout(() => {
-				// 	console.debug("==== STOP SCANNING ====")
-				// 	isScanning = false;
-				// }, (timeoutInSeconds * 1000));
-
-			} else {
-				e.preventDefault();
-			}
-		}
-
-		function stopScanning() {
-			isScanning = false;
-		}
-
-		function scanNow(isScanNowClick) {
-			const videoFormat = document.getElementById("video_scan_format");
-			const selectDevice = document.getElementById("device_selector");
-
-			const selectedDevice = selectDevice.value;
-			const selectedFormat = videoFormat.value;
-
-			if ((selectedDevice && isScanning) || (selectedDevice && isScanNowClick)) {
-				scanFrame(selectedFormat);
-			} else {
-				console.debug("[DEBUG] ==== No Device Selected.");
-			}
-		}
-
-		function scanFrame(selectedFormat) {
-			return new Promise((resolve, reject) => {
-				try {
-					const videoElem = document.getElementById("user-video");
-					videoElem.getTrac
-
-					// Create a temp canvas context...
-					const scanCanvas = document.createElement("canvas");
-					scanCanvas.width = videoElem.videoWidth;
-					scanCanvas.height = videoElem.videoHeight;
-					const ctx = scanCanvas.getContext("2d");
-
-					// Draw current video frame onto the temp canvas.
-					ctx.drawImage(videoElem, 0, 0, scanCanvas.width, scanCanvas.height);
-
-					// Get the image data from the temporary canvas
-					const frameImageData = ctx.getImageData(0,0, scanCanvas.width, scanCanvas.height);
-
-					console.debug("[DEBUG] ==== SENDING DATA TO WORKER", frameImageData);
-					const messageData = {
-						imageData: frameImageData,
-						selectedFormat: selectedFormat
-					};
-					imageWorker.postMessage(messageData);
-
-					resolve();
-
-				} catch(e) { reject(e); }
-			});
-		}
-
-		function scanBarcode(file) {
-			var reader = new FileReader();
-			reader.onloadend = function(evt) {
-				var format = document.getElementById("scan_format").value;
-				var fileData = new Uint8Array(evt.target.result);
-
-				var buffer = zxing._malloc(fileData.length);
-				zxing.HEAPU8.set(fileData, buffer);
-
-				const start = performance.now();
-				var result = zxing.readBarcodeFromImage(buffer, fileData.length, true, format);
-				const end = performance.now();
-
-				console.debug(`Execution time: ${ end - start } ms`);
-
-				zxing._free(buffer);
-
-				showImage(document.getElementById("drop_zone"), fileData, file.type, result.position);
-				showScanResult(result);
-			}
-			reader.readAsArrayBuffer(file);
-		}
-
-		function startUpVideoElem(selectedDeviceId) {
-
-			if (!selectedDeviceId) { console.warn("No Selected Video Device") }
-
-			const videoElem = document.getElementById("user-video");
-			if (!videoElem) { console.warn("No Video Element with id \"user-video\""); return; }
-
-			const videoConstraints = {
-				video: {
-					deviceId: selectedDeviceId
-				},
-			};
-
-			// get user's camera and attach stream to video element
-			navigator.mediaDevices.getUserMedia(videoConstraints)
-				.then((stream) => { 
-					console.debug("[DEBUG] ==== Device Stream Started", stream);
-					videoElem.srcObject = stream; 
-					videoElem.play();
-				})
-				.catch((error) => { console.error("Error accessing media devices", error); });
-		}
-
-		function selectedVideoDeviceChanged() {
-			console.debug("[DEBUG] ==== SELECTED VIDEO DEVICE HAS CHANGED");
-			const deviceSelector = document.getElementById("device_selector");
-			const selectedDeviceValue = deviceSelector.value;
-
-			if (selectedDeviceValue)
-				startUpVideoElem(selectedDeviceValue);
-			else {
-				console.warn("")
-			}
-		}
-
-		function loadVideoDevices() {
-			return new Promise((resolve, reject) => {
-
-				navigator.mediaDevices.enumerateDevices()
-				.then(function(md) {
-
-					const deviceSelector = document.getElementById("device_selector");
-
-					// Clear dropdown list and add unselected option.
-					var i, L = deviceSelector.options.length - 1;
-					for(i = L; i >= 0; i--) { deviceSelector.remove(i); }
-					var option = document.createElement("option");
-					option.text = "Select A Device";
-					option.value = "";
-					option.selected = true;
-					deviceSelector.appendChild(option);
-
-					if (deviceSelector) { console.debug("[DEBUG] ==== Device Selector Element", deviceSelector); }
-					console.debug("[DEBUG] ==== DEVICES", md);
-					const mdLen = md.length;
-					
-					for (var i = 0; i < mdLen; i++) {
-						const d = md[i];
-						if (d.kind === "videoinput") {
-							var option = document.createElement("option");
-							option.text = d.label ? d.label : `Device ${i + 1}`;
-							option.value = d.deviceId;
-
-							deviceSelector.appendChild(option);
-						}
-					}
-
-					deviceSelector.addEventListener("change", selectedVideoDeviceChanged);
-
-					resolve();
-				});
-
-			});
-		}
-
-		function showImage(container, fileData, fileType, position) {
-			fileType = fileType || "image/jpeg";
-			container.innerHTML = "";
-			var img = document.createElement("img");
-			img.addEventListener('load', function() {
-				container.style.width = img.width + 'px';
-				container.style.height = img.height + 'px';
-				const canvas = document.createElement("canvas");
-				canvas.width = img.width;
-				canvas.height = img.height;
-				const ctx = canvas.getContext("2d");
-				ctx.drawImage(img, 0, 0);
-				ctx.beginPath();
-				ctx.moveTo(position.topLeft.x, position.topLeft.y);
-				ctx.lineTo(position.topRight.x, position.topRight.y);
-				ctx.lineTo(position.bottomRight.x, position.bottomRight.y);
-				ctx.lineTo(position.bottomLeft.x, position.bottomLeft.y);
-				ctx.closePath();
-				ctx.strokeStyle = "red";
-				ctx.lineWidth = 5;
-				ctx.stroke();
-				container.appendChild(canvas);
-			});
-			img.src = "data:" + fileType + ";base64," + base64ArrayBuffer(fileData);
-		}
-
-		function showScanResult(result) {
-			if (result.error) {
-				document.getElementById("scan_result").innerHTML = '<font color="red">Error: ' + result.error + '</font>';
-			} else if (result.format) {
-				document.getElementById("scan_result").innerHTML = "Format: <strong>" + result.format + "</strong><pre>" + result.text + "</pre>";
-			} else {
-				document.getElementById("scan_result").innerHTML = "No " + (document.getElementById("scan_format").value || "barcode") + " found";
-			}
-		}
-
-		function dragOverHandler(ev) {
+function dragOverHandler(ev) {
 	ev.preventDefault();
 }
 
-		function dropHandler(ev) {
+function dropHandler(ev) {
 	ev.preventDefault();
 
 	if (ev.dataTransfer.items) {
@@ -255,7 +92,7 @@
 	removeDragData(ev)
 }
 
-		function removeDragData(ev) {
+function removeDragData(ev) {
 	if (ev.dataTransfer.items) {
 		ev.dataTransfer.items.clear();
 	} else {
@@ -263,22 +100,17 @@
 	}
 }
 
-		function fileSelected(input) {
+function fileSelected(input) {
 	scanBarcode(input.files[0]);
 }
 
-		function clearScanImage() {
+function clearScanImage() {
 	document.getElementById("drop_zone").innerHTML = "Drag your image here...";
 }
-
-		window.addEventListener("load", (event) => {
-			console.debug("Page is loaded");
-			loadVideoDevices();
-		});
 	</script>
 	<style>
 #drop_zone {
-	border: 1px dashed blue;
+	border: 1px solid blue;
 	width: 220px;
 	height: 150px;
 	line-height: 150px;
@@ -302,111 +134,49 @@ tr td:first-child {
 	text-align: right;
 }
 
-body {
-	margin: 0;
-	display:flex;
-	flex-direction: column;
-	min-height: 100vh;
+body>div {
+	float: left;
+	margin: 0.5em;
 }
-
-body > div#container {
-	display:flex; 
-	flex-direction: row;
-	justify-content: space-between;
-}
-
-div#container > .group-item {
-	padding: 0 1em;
-	flex-grow: 1;
-	width: 49.94%;
-}
-
-div#container > .v-divider {
-	width: 1px;
-	background-color: #000;
-}
-
 	</style>
 </head>
 
 <body>
-	<div id="container">
-		<div class="group-item">
-			<h3>Read barcodes From Image</h3>
-			<p>
-				This is a simple demo of WebAssembly build (using Emcripten) of <a href="https://github.com/nu-book/zxing-cpp">zxing-cpp</a>
-			</p>
-			<p></p>
-			<div>
-				<span>Scan Format:</span>
-				<select id="scan_format" onchange="clearScanImage()">
-					<option value="" selected="">Any</option>
-					<option value="Aztec">Aztec</option>
-					<option value="Codabar">Codabar</option>
-					<option value="Code39">Code 39</option>
-					<option value="Code93">Code 93</option>
-					<option value="Code128">Code 128</option>
-					<option value="DataMatrix">DataMatrix</option>
-					<option value="EAN8">EAN-8</option>
-					<option value="EAN13">EAN-13</option>
-					<option value="ITF">ITF</option>
-					<option value="PDF417">PDF417</option>
-					<option value="QRCode">QR Code</option>
-					<option value="UPCA">UPC-A</option>
-					<option value="UPCE">UPC-E</option>
-				</select>
-				<br />
-				<div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
-					Drag your image here...
-				</div>
-				Or <input type="file" accept="image/png, image/jpeg" onchange="fileSelected(this)" />
-			</div>
+	<h2>zxing-cpp/wasm reader demo</h2>
+	<p>
+		This is a simple demo of the wasm wrapper of <a href="https://github.com/zxing-cpp/zxing-cpp">zxing-cpp</a>
+		scanning for barcodes in image files.
+	</p>
+	<p></p>
+	<div>
+		Scan Format:
+		<select id="scan_format" onchange="clearScanImage()">
+			<option value="" selected="">Any</option>
+			<option value="Aztec">Aztec</option>
+			<option value="Codabar">Codabar</option>
+			<option value="Code39">Code 39</option>
+			<option value="Code93">Code 93</option>
+			<option value="Code128">Code 128</option>
+			<option value="DataMatrix">DataMatrix</option>
+			<option value="DataBar">DataBar</option>
+			<option value="DataBarExpanded">DataBarExpanded</option>
+			<option value="EAN8">EAN-8</option>
+			<option value="EAN13">EAN-13</option>
+			<option value="ITF">ITF</option>
+			<option value="PDF417">PDF417</option>
+			<option value="QRCode">QR Code</option>
+			<option value="MicroQRCode">Micro QRCode</option>
+			<option value="UPCA">UPC-A</option>
+			<option value="UPCE">UPC-E</option>
+			<option value="LinearCodes">Linear Codes</option>
+			<option value="MatrixCodes">Matrix Codes</option>
+			</select>
+		<br />
+		<div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
+			Drag your image here...
 		</div>
-		<div class="v-divider"></div>
-		<div class="group-item">
-			<h3>Read barcodes from video</h3>
-			<p>
-				This is a simple demo of WebAssembly build (using Emcripten) of <a href="https://github.com/nu-book/zxing-cpp">zxing-cpp</a>
-			</p>
-			<p></p>
-			<div class="video-buttons">
-				<button id="startVideo" class="video-button" onclick="startScanning()" >Start Continuous Scanning</button>
-				<button id="workerTest" class="video-button" onclick="scanNow(true)">Scan Single Frame</button>
-				<div><span>Scan Duration in Seconds: </span><input id="scan_duration" type="number" value="60" ></div>
-			</div>
-			<div class="video-settings">
-				<div>
-					<spasn>Selected Device: </spasn>
-					<select id="device_selector">
-						<option value="one" selected="">Video Device</option>
-					</select>
-				</div>
-				<div>
-					<span>Scan Format: </span>
-					<select id="video_scan_format" onchange="clearScanImage()">
-						<option value="" selected="">Any</option>
-						<option value="Aztec">Aztec</option>
-						<option value="Codabar">Codabar</option>
-						<option value="Code39">Code 39</option>
-						<option value="Code93">Code 93</option>
-						<option value="Code128">Code 128</option>
-						<option value="DataMatrix">DataMatrix</option>
-						<option value="EAN8">EAN-8</option>
-						<option value="EAN13">EAN-13</option>
-						<option value="ITF">ITF</option>
-						<option value="PDF417">PDF417</option>
-						<option value="QRCode">QR Code</option>
-						<option value="UPCA">UPC-A</option>
-						<option value="UPCE">UPC-E</option>
-					</select>
-				</div>
-			</div>
-			<div class="video-preview">
-				<video id="user-video" />
-			</div>
-		</div>
-	</div>
-	<div id=""results">
+		Or <input type="file" accept="image/png, image/jpeg" onchange="fileSelected(this)" />
+		<br />
 		<div id="scan_result"></div>
 	</div>
 </body>

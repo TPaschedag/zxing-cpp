@@ -5,3 +5,12 @@ CMakeLists.txt.user
 *.d
 *.a
 
+wasm_build
+emsdk
+
+wrappers/wasm/zxing.js
+wrappers/wasm/zxing.wasm
+wrappers/wasm/zxing_reader.js
+wrappers/wasm/zxing_reader.wasm
+wrappers/wasm/zxing_writer.js
+wrappers/wasm/zxing_writer.wasm

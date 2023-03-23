@@ -38,7 +38,9 @@ self.addEventListener('message', async (event) => {
     const scanResult = await scanData(imageData, format);
 
     console.debug("[DEBUG][WORKER] ==== SCAN RESULT", scanResult);
-    // this.self.postMessage(resultMessage);
+
+
+    this.self.postMessage(scanResult);
 });
 
 const scanData = async (imgData, selectedFormat) => {
@@ -58,5 +60,8 @@ const scanData = async (imgData, selectedFormat) => {
 
     zxing._free(buffer);
     
-    return result;
+    return {
+        result: result,
+        processTimeMs: (end - start)
+    };
 }
